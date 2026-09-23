@@ -2,6 +2,7 @@ import { MarkerType } from '@xyflow/react'
 import type { ClassFlowEdge, ClassFlowNode, RelationOption, RelationType, UmlRelationData } from '../types/relation.types'
 
 export const cardinalityOptions = ['1', '0..1', '0..*', '1..*'] as const
+export const relationTypesWithoutCardinality: RelationType[] = ['generalization']
 
 export function normalizeCardinality(value: unknown) {
   if (value === '*') {
@@ -74,6 +75,10 @@ export function normalizeRelationType(value: unknown): RelationType {
   return relationTypes.some((relation) => relation.id === value) ? (value as RelationType) : 'association'
 }
 
+export function relationUsesCardinality(value: unknown) {
+  return !relationTypesWithoutCardinality.includes(normalizeRelationType(value))
+}
+
 export function getRelationLabel(relationType: RelationType) {
   return relationTypes.find((relation) => relation.id === relationType)?.label ?? 'Association'
 }
@@ -84,6 +89,9 @@ export function getRelationSymbol(relationType: RelationType) {
 
 export function getRelationDisplay(data?: Partial<UmlRelationData>) {
   const relationType = normalizeRelationType(data?.relationType)
+  if (!relationUsesCardinality(relationType)) {
+    return data?.name ? String(data.name) : getRelationLabel(relationType)
+  }
   const sourceCardinality = String(data?.sourceCardinality ?? '1..*')
   const targetCardinality = String(data?.targetCardinality ?? '1')
   const name = data?.name ? ` ${data.name} ` : ` ${getRelationLabel(relationType)} `

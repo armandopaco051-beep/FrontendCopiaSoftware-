@@ -1,7 +1,7 @@
 import { ApiError } from './api'
 import type { DiagramaResponse } from './diagramaService'
 
-export const AI_API_URL = 'http://127.0.0.1:8002'
+export const AI_API_URL = (import.meta.env.VITE_AI_API_URL ?? 'http://127.0.0.1:8002').replace(/\/$/, '')
 
 export type AiPlannerRequest = {
   message: string
@@ -32,6 +32,95 @@ export type AiPlannerResponse = {
   actions: AiPlannerAction[]
   questions: AiPlannerQuestion[]
   can_execute: boolean
+}
+
+export type AiImageAttribute = {
+  name: string
+  type: string
+  primaryKey: boolean
+  foreignKey: boolean
+  nullable: boolean
+}
+
+export type AiImageMethod = {
+  name: string
+  returnType: string
+  parameters: Array<{ name: string; type: string }>
+}
+
+export type AiImageClass = {
+  name: string
+  kind: 'class' | 'abstractClass' | 'interface'
+  attributes: AiImageAttribute[]
+  methods: AiImageMethod[]
+  templateParameters: string[]
+  confidence: number
+}
+
+export type AiImageRelation = {
+  sourceName: string
+  targetName: string
+  relationType: string
+  sourceCardinality: '1' | '0..1' | '0..*' | '1..*' | null
+  targetCardinality: '1' | '0..1' | '0..*' | '1..*' | null
+  associationClassName?: string | null
+  sourceRole?: string | null
+  targetRole?: string | null
+  confidence: number
+}
+
+export type AiImageDiagramResponse = {
+  summary: string
+  classes: AiImageClass[]
+  relations: AiImageRelation[]
+  actions: AiPlannerAction[]
+  warnings: string[]
+  questions: string[]
+  can_execute: boolean
+  image_metadata: Record<string, unknown>
+}
+
+type AnalyzeDiagramImageOptions = {
+  image: File
+  proyectoId: number
+  diagramaId: number
+  message?: string
+}
+
+export async function analyzeDiagramImage({
+  image,
+  proyectoId,
+  diagramaId,
+  message = 'Transcribe fielmente las clases, atributos, relaciones y multiplicidades visibles.',
+}: AnalyzeDiagramImageOptions) {
+  const token = localStorage.getItem('token')
+  const formData = new FormData()
+  formData.append('image', image)
+  formData.append('proyecto_id', String(proyectoId))
+  formData.append('diagrama_id', String(diagramaId))
+  formData.append('message', message)
+
+  const headers: HeadersInit = {}
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${AI_API_URL}/ai/image/analyze`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+  const data = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new ApiError(
+      data?.detail ?? data?.message ?? 'No se pudo analizar la imagen del diagrama.',
+      response.status,
+      data?.detail,
+    )
+  }
+
+  return data as AiImageDiagramResponse
 }
 
 export async function planWithAi(body: AiPlannerRequest) {

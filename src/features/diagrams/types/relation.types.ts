@@ -50,8 +50,8 @@ export type UmlRelationData = {
   sourceClassId: string
   targetClassId: string
   relationType: RelationType
-  sourceCardinality: Cardinality
-  targetCardinality: Cardinality
+  sourceCardinality?: Cardinality
+  targetCardinality?: Cardinality
   sourceRole?: string
   targetRole?: string
   name?: string

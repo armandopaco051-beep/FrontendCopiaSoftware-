@@ -61,6 +61,7 @@ import {
   getRelationEdgeProps,
   normalizeCardinality,
   normalizeRelationType,
+  relationUsesCardinality,
 } from '../../features/diagrams/utils/relation-markers'
 import { createDiagramEvent, validateRelation } from '../../features/diagrams/utils/relation-validation'
 import type { Proyecto, ProyectoMiembro } from '../../models/proyecto'
@@ -253,19 +254,30 @@ function toFlowNodes(nodes: DiagramNode[]): ClassFlowNode[] {
 function toFlowEdges(edges: DiagramEdge[]): ClassFlowEdge[] {
   return edges.map((edge) => {
     const relationType = normalizeRelationType(edge.data?.relationType)
+    const {
+      sourceCardinality: _sourceCardinality,
+      targetCardinality: _targetCardinality,
+      cardinality: _legacyCardinality,
+      ...persistedData
+    } = edge.data ?? {}
+    const cardinalityData = relationUsesCardinality(relationType)
+      ? {
+          sourceCardinality: normalizeCardinality(edge.data?.sourceCardinality),
+          targetCardinality: normalizeCardinality(edge.data?.targetCardinality),
+        }
+      : {}
 
     return {
       id: edge.id,
       source: edge.source,
       target: edge.target,
       data: {
-        ...edge.data,
+        ...persistedData,
         id: edge.id,
         sourceClassId: edge.source,
         targetClassId: edge.target,
         relationType,
-        sourceCardinality: normalizeCardinality(edge.data?.sourceCardinality),
-        targetCardinality: normalizeCardinality(edge.data?.targetCardinality),
+        ...cardinalityData,
         createdAt: String(edge.data?.createdAt ?? new Date().toISOString()),
         createdBy: edge.data?.createdBy as string | undefined,
       },
@@ -397,7 +409,18 @@ function toDiagramContent(nodes: ClassFlowNode[], edges: ClassFlowEdge[]): Diagr
     })),
     edges: edges.map((edge) => {
       const currentData = getEdgeData(edge)
-      const { cardinality: _legacyCardinality, ...relationData } = currentData
+      const {
+        cardinality: _legacyCardinality,
+        sourceCardinality: _sourceCardinality,
+        targetCardinality: _targetCardinality,
+        ...relationData
+      } = currentData
+      const cardinalityData = relationUsesCardinality(currentData.relationType)
+        ? {
+            sourceCardinality: normalizeCardinality(currentData.sourceCardinality),
+            targetCardinality: normalizeCardinality(currentData.targetCardinality),
+          }
+        : {}
 
       return {
         id: edge.id,
@@ -408,8 +431,7 @@ function toDiagramContent(nodes: ClassFlowNode[], edges: ClassFlowEdge[]): Diagr
           ...relationData,
           sourceClassId: edge.source,
           targetClassId: edge.target,
-          sourceCardinality: normalizeCardinality(currentData.sourceCardinality),
-          targetCardinality: normalizeCardinality(currentData.targetCardinality),
+          ...cardinalityData,
         },
       }
     }),
@@ -418,15 +440,26 @@ function toDiagramContent(nodes: ClassFlowNode[], edges: ClassFlowEdge[]): Diagr
 
 function getEdgeData(edge: ClassFlowEdge): UmlRelationData {
   const relationType = normalizeRelationType(edge.data?.relationType)
+  const {
+    sourceCardinality: _sourceCardinality,
+    targetCardinality: _targetCardinality,
+    cardinality: _legacyCardinality,
+    ...persistedData
+  } = (edge.data ?? {}) as Partial<UmlRelationData> & { cardinality?: unknown }
+  const cardinalityData = relationUsesCardinality(relationType)
+    ? {
+        sourceCardinality: normalizeCardinality(edge.data?.sourceCardinality),
+        targetCardinality: normalizeCardinality(edge.data?.targetCardinality),
+      }
+    : {}
 
   return {
-    ...edge.data,
+    ...persistedData,
     id: edge.data?.id ?? edge.id,
     sourceClassId: edge.data?.sourceClassId ?? edge.source,
     targetClassId: edge.data?.targetClassId ?? edge.target,
     relationType,
-    sourceCardinality: normalizeCardinality(edge.data?.sourceCardinality),
-    targetCardinality: normalizeCardinality(edge.data?.targetCardinality),
+    ...cardinalityData,
     createdAt: edge.data?.createdAt ?? new Date().toISOString(),
   }
 }
@@ -471,8 +504,9 @@ function buildRelationData({
     sourceClassId,
     targetClassId,
     relationType,
-    sourceCardinality,
-    targetCardinality,
+    ...(relationUsesCardinality(relationType)
+      ? { sourceCardinality, targetCardinality }
+      : {}),
     associationClassId,
     createdBy,
     createdAt: createdAt ?? new Date().toISOString(),
@@ -492,6 +526,14 @@ function getRecursiveHandles(sourceHandle?: string | null, targetHandle?: string
     sourceHandle: 'right',
     targetHandle: 'top',
   }
+}
+
+function getDefaultRelationCardinalities(relationType: RelationType) {
+  if (relationType === 'composition' || relationType === 'aggregation') {
+    return { sourceCardinality: '1' as Cardinality, targetCardinality: '0..*' as Cardinality }
+  }
+
+  return { sourceCardinality: '1..*' as Cardinality, targetCardinality: '1' as Cardinality }
 }
 
 function normalizeClassAttributes(rawAttrs: unknown): ClassAttribute[] {
@@ -1096,17 +1138,23 @@ export function EstudiantePage({
             rawData.targetCardinality ?? rawData.target_cardinality ?? edge.data?.targetCardinality,
           )
           const name = String(rawData.name ?? rawData.label ?? edge.data?.name ?? '')
+          const {
+            sourceCardinality: _sourceCardinality,
+            targetCardinality: _targetCardinality,
+            cardinality: _legacyCardinality,
+            ...mergedData
+          } = { ...edge.data, ...rawData }
 
           const nextData: UmlRelationData = {
+            ...mergedData,
             id: relationId,
             sourceClassId: String(rawData.sourceClassId ?? edge.data?.sourceClassId ?? edge.source),
             targetClassId: String(rawData.targetClassId ?? edge.data?.targetClassId ?? edge.target),
             createdAt: String(rawData.createdAt ?? edge.data?.createdAt ?? new Date().toISOString()),
-            ...edge.data,
-            ...rawData,
             relationType,
-            sourceCardinality,
-            targetCardinality,
+            ...(relationUsesCardinality(relationType)
+              ? { sourceCardinality, targetCardinality }
+              : {}),
             name,
           }
 
@@ -1808,6 +1856,7 @@ export function EstudiantePage({
           targetHandle: connection.targetHandle,
         }
     const relationId = `rel-${connection.source}-${connection.target}-${Date.now()}`
+    const defaultCardinalities = getDefaultRelationCardinalities(selectedRelationType)
     const validation = validateRelation(
       {
         id: relationId,
@@ -1816,8 +1865,7 @@ export function EstudiantePage({
         sourceHandle: recursiveHandles.sourceHandle,
         targetHandle: recursiveHandles.targetHandle,
         relationType: selectedRelationType,
-        sourceCardinality: '1..*',
-        targetCardinality: '1',
+        ...defaultCardinalities,
         createdBy: userProfile?.codigo,
       },
       nodes,
@@ -1847,9 +1895,9 @@ export function EstudiantePage({
           relationId,
           relationType: selectedRelationType,
           sourceClassId: connection.source,
-          sourceCardinality: '1..*',
+          sourceCardinality: defaultCardinalities.sourceCardinality,
           targetClassId: connection.target,
-          targetCardinality: '1',
+          targetCardinality: defaultCardinalities.targetCardinality,
         }),
         ...getRelationEdgeProps(selectedRelationType),
       },
@@ -1901,14 +1949,14 @@ export function EstudiantePage({
           targetHandle: undefined,
         }
     const relationId = `rel-${relationSourceId}-${relationTargetId}-${Date.now()}`
+    const defaultCardinalities = getDefaultRelationCardinalities(selectedRelationType)
     const validation = validateRelation(
       {
         id: relationId,
         sourceClassId: relationSourceId,
         targetClassId: relationTargetId,
         relationType: selectedRelationType,
-        sourceCardinality: '1..*',
-        targetCardinality: '1',
+        ...defaultCardinalities,
         createdBy: userProfile?.codigo,
       },
       nodes,
@@ -1938,9 +1986,9 @@ export function EstudiantePage({
         relationId,
         relationType: selectedRelationType,
         sourceClassId: relationSourceId,
-        sourceCardinality: '1..*',
+        sourceCardinality: defaultCardinalities.sourceCardinality,
         targetClassId: relationTargetId,
-        targetCardinality: '1',
+        targetCardinality: defaultCardinalities.targetCardinality,
       }),
       ...getRelationEdgeProps(selectedRelationType),
     }
@@ -2179,6 +2227,13 @@ export function EstudiantePage({
 
     let nextNodes = nodes
     const currentData = getEdgeData(relation)
+    const relationCardinalities =
+      relationType === currentData.relationType
+        ? {
+            sourceCardinality: currentData.sourceCardinality,
+            targetCardinality: currentData.targetCardinality,
+          }
+        : getDefaultRelationCardinalities(relationType)
     const associationClassNode =
       relationType === 'associationClass' && !currentData.associationClassId
         ? createAssociationClassNode(relation.id, relation.source, relation.target, nodes)
@@ -2193,8 +2248,7 @@ export function EstudiantePage({
         sourceClassId: relation.source,
         targetClassId: relation.target,
         relationType,
-        sourceCardinality: currentData.sourceCardinality,
-        targetCardinality: currentData.targetCardinality,
+        ...relationCardinalities,
         associationClassId,
         createdBy: userProfile?.codigo,
       },
@@ -2227,9 +2281,9 @@ export function EstudiantePage({
         relationId: edge.id,
         relationType,
         sourceClassId: edge.source,
-        sourceCardinality: currentData.sourceCardinality,
+        sourceCardinality: relationCardinalities.sourceCardinality,
         targetClassId: edge.target,
-        targetCardinality: currentData.targetCardinality,
+        targetCardinality: relationCardinalities.targetCardinality,
       })
 
       return {
@@ -2270,6 +2324,11 @@ export function EstudiantePage({
   ) {
     if (!canEditDiagram) {
       denyDiagramEdit()
+      return
+    }
+
+    const relation = edges.find((edge) => edge.id === edgeId)
+    if (!relation || !relationUsesCardinality(relation.data?.relationType)) {
       return
     }
 

@@ -1,4 +1,5 @@
 export const API_URL = 'http://127.0.0.1:8001'
+export const AUTH_UNAUTHORIZED_EVENT = 'drawschema:auth-unauthorized'
 
 export class ApiError extends Error {
   status: number
@@ -40,6 +41,11 @@ export async function apiRequest<TResponse, TBody = unknown>(
   const data = await response.json().catch(() => null)
 
   if (!response.ok) {
+    if (response.status === 401 && path !== '/auth/login') {
+      localStorage.removeItem('token')
+      window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT))
+    }
+
     throw new ApiError(
       data?.detail ?? data?.message ?? 'Error en la peticion. Revisa el backend.',
       response.status,

@@ -7,7 +7,7 @@ import type {
   RelationDraft,
   RelationValidationResult,
 } from '../types/relation.types'
-import { cardinalityOptions, normalizeRelationType } from './relation-markers'
+import { cardinalityOptions, normalizeRelationType, relationUsesCardinality } from './relation-markers'
 
 function existsNode(nodes: ClassFlowNode[], nodeId: string) {
   return nodes.some((node) => node.id === nodeId)
@@ -133,6 +133,13 @@ export function validateRelation(
   }
 
   if (draft.relationType === 'composition') {
+    if (!['1', '0..1'].includes(String(draft.sourceCardinality ?? '1'))) {
+      return {
+        valid: false,
+        message: 'En una composicion, una Parte solo puede pertenecer a un Todo.',
+      }
+    }
+
     const partAlreadyHasWhole = edges.some(
       (edge) =>
         edge.id !== draft.id &&
@@ -217,7 +224,10 @@ export function validateRelation(
     }
   }
 
-  if (!isValidCardinality(draft.sourceCardinality ?? '1..*') || !isValidCardinality(draft.targetCardinality ?? '1')) {
+  if (
+    relationUsesCardinality(draft.relationType) &&
+    (!isValidCardinality(draft.sourceCardinality ?? '1..*') || !isValidCardinality(draft.targetCardinality ?? '1'))
+  ) {
     return {
       valid: false,
       message: 'La cardinalidad no es valida.',

@@ -1,6 +1,12 @@
 import { ArrowLeftRight, Link2, Trash2 } from 'lucide-react'
 import type { Cardinality, ClassFlowEdge, ClassFlowNode, RelationType } from '../../diagrams/types/relation.types'
-import { cardinalityOptions, getRelationLabel, normalizeRelationType, relationTypes } from '../../diagrams/utils/relation-markers'
+import {
+  cardinalityOptions,
+  getRelationLabel,
+  normalizeRelationType,
+  relationTypes,
+  relationUsesCardinality,
+} from '../../diagrams/utils/relation-markers'
 import { RelationTypeIcon } from './RelationTypeIcon'
 
 type RelationsPanelProps = {
@@ -155,30 +161,34 @@ export function RelationBuilderPanel({
                   <strong>{getClassNameById(edge.target)}</strong>
                 </button>
                 <div>
-                  <select
-                    aria-label="Cardinalidad origen"
-                    disabled={!canEditDiagram}
-                    onChange={(event) => updateRelationCardinality(edge.id, 'sourceCardinality', event.target.value)}
-                    value={String(edge.data?.sourceCardinality ?? '1..*')}
-                  >
-                    {cardinalityOptions.map((cardinality) => (
-                      <option key={cardinality} value={cardinality}>
-                        {cardinality}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label="Cardinalidad destino"
-                    disabled={!canEditDiagram}
-                    onChange={(event) => updateRelationCardinality(edge.id, 'targetCardinality', event.target.value)}
-                    value={String(edge.data?.targetCardinality ?? '1')}
-                  >
-                    {cardinalityOptions.map((cardinality) => (
-                      <option key={cardinality} value={cardinality}>
-                        {cardinality}
-                      </option>
-                    ))}
-                  </select>
+                  {relationUsesCardinality(relationType) ? (
+                    <>
+                      <select
+                        aria-label="Cardinalidad origen"
+                        disabled={!canEditDiagram}
+                        onChange={(event) => updateRelationCardinality(edge.id, 'sourceCardinality', event.target.value)}
+                        value={String(edge.data?.sourceCardinality ?? '1..*')}
+                      >
+                        {cardinalityOptions.map((cardinality) => (
+                          <option key={cardinality} value={cardinality}>
+                            {cardinality}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Cardinalidad destino"
+                        disabled={!canEditDiagram}
+                        onChange={(event) => updateRelationCardinality(edge.id, 'targetCardinality', event.target.value)}
+                        value={String(edge.data?.targetCardinality ?? '1')}
+                      >
+                        {cardinalityOptions.map((cardinality) => (
+                          <option key={cardinality} value={cardinality}>
+                            {cardinality}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : null}
                   <button
                     aria-label="Invertir direccion"
                     className="icon-button"
@@ -253,18 +263,20 @@ export function RelationsPanel({
             return (
               <article className={selectedEdgeId === edge.id ? 'relations-row active' : 'relations-row'} key={edge.id}>
                 <strong>{getClassNameById(edge.source)}</strong>
-                <select
-                  aria-label="Cardinalidad origen"
-                  disabled={!canEditDiagram}
-                  onChange={(event) => updateRelationCardinality(edge.id, 'sourceCardinality', event.target.value)}
-                  value={String(edge.data?.sourceCardinality ?? '1..*')}
-                >
-                  {cardinalityOptions.map((cardinality: Cardinality) => (
-                    <option key={cardinality} value={cardinality}>
-                      {cardinality}
-                    </option>
-                  ))}
-                </select>
+                {relationUsesCardinality(relationType) ? (
+                  <select
+                    aria-label="Cardinalidad origen"
+                    disabled={!canEditDiagram}
+                    onChange={(event) => updateRelationCardinality(edge.id, 'sourceCardinality', event.target.value)}
+                    value={String(edge.data?.sourceCardinality ?? '1..*')}
+                  >
+                    {cardinalityOptions.map((cardinality: Cardinality) => (
+                      <option key={cardinality} value={cardinality}>
+                        {cardinality}
+                      </option>
+                    ))}
+                  </select>
+                ) : <span aria-hidden="true" />}
                 <select
                   disabled={!canEditDiagram}
                   onChange={(event) => updateRelation(edge.id, event.target.value as RelationType)}
@@ -276,18 +288,20 @@ export function RelationsPanel({
                     </option>
                   ))}
                 </select>
-                <select
-                  aria-label="Cardinalidad destino"
-                  disabled={!canEditDiagram}
-                  onChange={(event) => updateRelationCardinality(edge.id, 'targetCardinality', event.target.value)}
-                  value={String(edge.data?.targetCardinality ?? '1')}
-                >
-                  {cardinalityOptions.map((cardinality: Cardinality) => (
-                    <option key={cardinality} value={cardinality}>
-                      {cardinality}
-                    </option>
-                  ))}
-                </select>
+                {relationUsesCardinality(relationType) ? (
+                  <select
+                    aria-label="Cardinalidad destino"
+                    disabled={!canEditDiagram}
+                    onChange={(event) => updateRelationCardinality(edge.id, 'targetCardinality', event.target.value)}
+                    value={String(edge.data?.targetCardinality ?? '1')}
+                  >
+                    {cardinalityOptions.map((cardinality: Cardinality) => (
+                      <option key={cardinality} value={cardinality}>
+                        {cardinality}
+                      </option>
+                    ))}
+                  </select>
+                ) : <span aria-hidden="true" />}
                 <strong>{getClassNameById(edge.target)}</strong>
                 <div className="relation-actions">
                   <button

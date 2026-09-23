@@ -11,7 +11,7 @@ import { FileCode2, Plus } from 'lucide-react'
 import type { DiagramaResponse } from '../../../services/diagramaService'
 import { UmlRelationEdge } from '../../diagrams/components/edges/UmlRelationEdge'
 import type { ClassFlowEdge, ClassFlowNode, RelationType } from '../../diagrams/types/relation.types'
-import { getRelationPath, normalizeRelationType } from '../../diagrams/utils/relation-markers'
+import { getRelationPath, normalizeRelationType, relationUsesCardinality } from '../../diagrams/utils/relation-markers'
 import { ClassNode } from './ClassNode'
 
 const nodeTypes = {
@@ -143,6 +143,7 @@ export function DiagramCanvas({
 
             const path = getRelationPath(source, target)
             const relationType = normalizeRelationType(edge.data?.relationType)
+            const showCardinality = relationUsesCardinality(relationType)
             const associationClassId = edge.data?.associationClassId
             const associationClassNode =
               typeof associationClassId === 'string' ? nodes.find((node) => node.id === associationClassId) : null
@@ -175,12 +176,16 @@ export function DiagramCanvas({
                     d={`M ${associationClassCenterX} ${associationClassConnectorY} L ${path.midX} ${path.midY}`}
                   />
                 ) : null}
-                <text className="relation-overlay-label" x={path.sourceLabelX} y={path.sourceLabelY}>
-                  {edge.data?.sourceCardinality ?? '1..*'}
-                </text>
-                <text className="relation-overlay-label" x={path.targetLabelX} y={path.targetLabelY}>
-                  {edge.data?.targetCardinality ?? '1'}
-                </text>
+                {showCardinality ? (
+                  <>
+                    <text className="relation-overlay-label" x={path.sourceLabelX} y={path.sourceLabelY}>
+                      {edge.data?.sourceCardinality ?? '1..*'}
+                    </text>
+                    <text className="relation-overlay-label" x={path.targetLabelX} y={path.targetLabelY}>
+                      {edge.data?.targetCardinality ?? '1'}
+                    </text>
+                  </>
+                ) : null}
               </svg>
             )
           })}

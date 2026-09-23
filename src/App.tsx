@@ -24,6 +24,7 @@ import { PerfilPage } from './pages/perfil/PerfilPage'
 import { UsuariosPage } from './pages/usuario/UsuariosPage'
 import { VersionHistoryPage } from './pages/versiones/VersionHistoryPage'
 import type { DiagramaResponse } from './services/diagramaService'
+import { AUTH_UNAUTHORIZED_EVENT } from './services/api'
 import type { AuthUserProfile } from './utils/auth'
 import { getStoredToken, getUserProfileFromToken, isStudentToken, isSuperAdminToken } from './utils/auth'
 import './App.css'
@@ -194,6 +195,19 @@ function App() {
     window.addEventListener('popstate', handleBrowserNavigation)
 
     return () => window.removeEventListener('popstate', handleBrowserNavigation)
+  }, [])
+
+  useEffect(() => {
+    function handleUnauthorizedSession() {
+      setAuthToken(null)
+      setProfileOverride(null)
+      window.history.replaceState(null, '', pagePaths.login)
+      setCurrentPage('login')
+    }
+
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorizedSession)
+
+    return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handleUnauthorizedSession)
   }, [])
 
   function handleLoginSuccess(token: string) {
