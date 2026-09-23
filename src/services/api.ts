@@ -1,4 +1,4 @@
-export const API_URL = 'http://127.0.0.1:8001'
+export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8001').replace(/\/$/, '')
 export const AUTH_UNAUTHORIZED_EVENT = 'drawschema:auth-unauthorized'
 
 export class ApiError extends Error {

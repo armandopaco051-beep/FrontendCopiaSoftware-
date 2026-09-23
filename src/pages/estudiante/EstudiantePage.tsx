@@ -17,6 +17,7 @@ import {
   Download,
   FileCode2,
   FolderKanban,
+  HelpCircle,
   LayoutDashboard,
   MessageSquare,
   PanelLeftClose,
@@ -31,6 +32,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { AdminSidebarExtras } from '../../components/admin/AdminSidebarExtras'
+import { GuidedTour, type GuidedTourStep } from '../../features/onboarding/GuidedTour'
 import { AiCodegenPanel } from '../../features/ai/AiCodegenPanel'
 import { CommentsDrawer } from '../../features/comments/components/CommentsDrawer'
 import { ClassFeaturesPanel } from '../../features/diagramador/components/ClassFeaturesPanel'
@@ -124,6 +126,38 @@ const memberRoleOptions = [
   {
     id: 4,
     label: 'Visualizador',
+  },
+]
+
+const onboardingSteps: GuidedTourStep[] = [
+  {
+    title: 'Bienvenido al Diagramador UML',
+    description:
+      'Desde aqui puedes crear proyectos, modelar clases y trabajar con otras personas en tiempo real.',
+  },
+  {
+    target: '[data-tour="create-project"]',
+    title: 'Crea tu primer workspace',
+    description:
+      'Ponle un nombre y una descripcion. El proyecto sera el espacio que contiene tus diagramas y colaboradores.',
+  },
+  {
+    target: '[data-tour="project-list"]',
+    title: 'Abre el diagramador',
+    description:
+      'Tus proyectos aparecen aqui. Abre uno para crear clases, relaciones, atributos y metodos.',
+  },
+  {
+    target: '[data-tour="join-project"]',
+    title: 'Trabaja con tu equipo',
+    description:
+      'Usa un codigo para unirte a otro proyecto. Dentro de cada proyecto tambien podras invitar colaboradores y asignar permisos.',
+  },
+  {
+    target: '[data-tour="workspace-navigation"]',
+    title: 'Todo queda a mano',
+    description:
+      'Desde esta barra vuelves a tus proyectos y, al abrir uno, accedes al diagramador, la importacion XMI/EAP y el asistente.',
   },
 ]
 
@@ -746,6 +780,7 @@ export function EstudiantePage({
   const [realtimeStatus, setRealtimeStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState(false)
   const [membersMessage, setMembersMessage] = useState('')
   const [membersError, setMembersError] = useState('')
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
@@ -783,6 +818,23 @@ export function EstudiantePage({
   const canEditDiagram = miembroActual?.id_rol === 2 || miembroActual?.id_rol === 3
   const canManageMembers = miembroActual?.id_rol === 2
   const canViewOnly = miembroActual?.id_rol === 4
+  const onboardingStorageKey = useMemo(() => {
+    const userIdentity = userProfile?.codigo || userProfile?.email
+    return userIdentity ? `drawschema:onboarding:student:v1:${userIdentity}` : null
+  }, [userProfile?.codigo, userProfile?.email])
+
+  const finishOnboarding = useCallback(() => {
+    if (onboardingStorageKey) {
+      localStorage.setItem(onboardingStorageKey, 'completed')
+    }
+    setIsOnboardingOpen(false)
+  }, [onboardingStorageKey])
+
+  const restartOnboarding = useCallback(() => {
+    setView('projects')
+    setIsSidebarCollapsed(false)
+    window.requestAnimationFrame(() => setIsOnboardingOpen(true))
+  }, [])
 
   useEffect(() => {
     nodesRef.current = nodes
@@ -791,6 +843,17 @@ export function EstudiantePage({
   useEffect(() => {
     edgesRef.current = edges
   }, [edges])
+
+  useEffect(() => {
+    if (!onboardingStorageKey || view !== 'projects') {
+      return
+    }
+
+    if (localStorage.getItem(onboardingStorageKey) !== 'completed') {
+      const frameId = window.requestAnimationFrame(() => setIsOnboardingOpen(true))
+      return () => window.cancelAnimationFrame(frameId)
+    }
+  }, [onboardingStorageKey, view])
 
   useEffect(() => {
     try {
@@ -2699,7 +2762,7 @@ export function EstudiantePage({
           <strong>DrawSchema</strong>
         </a>
 
-        <nav className="admin-nav">
+        <nav className="admin-nav" data-tour="workspace-navigation">
           <p>Workspace</p>
           <button
             className={view === 'projects' ? 'active' : ''}
@@ -2739,9 +2802,20 @@ export function EstudiantePage({
                 <h1>Mis proyectos</h1>
               </div>
 
-              <button className="ghost-button" onClick={loadProyectos} type="button">
-                <RefreshCw size={18} /> Recargar
-              </button>
+              <div className="student-header-actions">
+                <button
+                  aria-label="Volver a ver la guia inicial"
+                  className="ghost-button"
+                  onClick={restartOnboarding}
+                  title="Ver guia inicial"
+                  type="button"
+                >
+                  <HelpCircle size={18} /> Guia
+                </button>
+                <button className="ghost-button" onClick={loadProyectos} type="button">
+                  <RefreshCw size={18} /> Recargar
+                </button>
+              </div>
             </header>
 
             {error ? <p className="users-message error">{error}</p> : null}
@@ -2749,7 +2823,7 @@ export function EstudiantePage({
             {isLoading ? <p className="users-loading">Cargando tus proyectos...</p> : null}
 
             <section className="student-projects-home">
-              <div className="student-panel student-create-project-panel">
+              <div className="student-panel student-create-project-panel" data-tour="create-project">
                 <div className="panel-title">
                   <div>
                     <p>Nuevo proyecto</p>
@@ -2779,7 +2853,7 @@ export function EstudiantePage({
                 </div>
               </div>
 
-              <div className="student-panel">
+              <div className="student-panel" data-tour="project-list">
                 <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <p>Proyectos</p>
@@ -2787,6 +2861,7 @@ export function EstudiantePage({
                   </div>
                   <button
                     className="join-project-trigger-btn"
+                    data-tour="join-project"
                     onClick={() => {
                       setUrlInviteCode('')
                       setIsJoinModalOpen(true)
@@ -3420,6 +3495,12 @@ export function EstudiantePage({
       />
 
       <ToastContainer />
+      <GuidedTour
+        isOpen={isOnboardingOpen}
+        onFinish={finishOnboarding}
+        steps={onboardingSteps}
+        theme={theme}
+      />
     </main>
   )
 }

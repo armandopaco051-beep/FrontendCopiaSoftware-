@@ -1,0 +1,239 @@
+.guided-tour {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  color: #f8fafc;
+  font-family: Inter, sans-serif;
+}
+
+.guided-tour-click-guard,
+.guided-tour-backdrop {
+  position: fixed;
+  inset: 0;
+}
+
+.guided-tour-click-guard {
+  z-index: 0;
+  background: transparent;
+}
+
+.guided-tour-backdrop {
+  z-index: 1;
+  background: rgba(6, 10, 18, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.guided-tour-spotlight {
+  position: fixed;
+  z-index: 1;
+  border: 2px solid #ff6175;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 5px rgba(255, 255, 255, 0.9),
+    0 0 0 9999px rgba(6, 10, 18, 0.72),
+    0 14px 42px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.guided-tour-spotlight::after {
+  position: absolute;
+  border: 2px solid rgba(255, 97, 117, 0.62);
+  border-radius: inherit;
+  content: '';
+  inset: -7px;
+  animation: guidedTourPulse 1.8s ease-out infinite;
+}
+
+.guided-tour-card {
+  position: fixed;
+  z-index: 2;
+  width: min(390px, calc(100vw - 32px));
+  border: 1px solid #343a45;
+  border-radius: 8px;
+  background: #151a22;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+  padding: 20px;
+}
+
+.guided-tour-card.is-centered {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.guided-tour-meta,
+.guided-tour-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.guided-tour-meta {
+  color: #aeb8c7;
+  font-size: 12px;
+}
+
+.guided-tour-meta > span {
+  color: #dbe5f1;
+  font-weight: 800;
+}
+
+.guided-tour-meta button,
+.guided-tour-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.guided-tour-meta button {
+  background: transparent;
+  color: #aeb8c7;
+  padding: 0;
+}
+
+.guided-tour-meta button:hover {
+  color: #ffffff;
+}
+
+.guided-tour-card h2 {
+  margin: 14px 0 7px;
+  color: #ffffff;
+  font-family: 'Space Grotesk', Inter, sans-serif;
+  font-size: 20px;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.guided-tour-card > p {
+  margin: 0;
+  color: #b8c1ce;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.guided-tour-progress {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #323943;
+  margin: 18px 0 16px;
+}
+
+.guided-tour-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #66b08a;
+}
+
+.guided-tour-actions button {
+  min-height: 38px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 13px;
+}
+
+.guided-tour-previous {
+  background: transparent;
+  color: #aeb8c7;
+}
+
+.guided-tour-previous:hover:not(:disabled) {
+  color: #ffffff;
+}
+
+.guided-tour-previous:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.guided-tour-next {
+  background: #f8fafc;
+  color: #101820;
+}
+
+.guided-tour-next:hover {
+  background: #dbeafe;
+}
+
+.guided-tour button:focus-visible {
+  outline: 3px solid rgba(143, 182, 255, 0.7);
+  outline-offset: 2px;
+}
+
+.guided-tour-light .guided-tour-card {
+  border-color: #deded8;
+  background: #ffffff;
+  color: #18222b;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+}
+
+.guided-tour-light .guided-tour-meta,
+.guided-tour-light .guided-tour-meta button,
+.guided-tour-light .guided-tour-card > p,
+.guided-tour-light .guided-tour-previous {
+  color: #687279;
+}
+
+.guided-tour-light .guided-tour-meta > span,
+.guided-tour-light .guided-tour-card h2 {
+  color: #1d2a32;
+}
+
+.guided-tour-light .guided-tour-meta button:hover,
+.guided-tour-light .guided-tour-previous:hover:not(:disabled) {
+  color: #111827;
+}
+
+.guided-tour-light .guided-tour-progress {
+  background: #e2e6df;
+}
+
+.guided-tour-light .guided-tour-next {
+  background: #20323a;
+  color: #ffffff;
+}
+
+.guided-tour-light .guided-tour-next:hover {
+  background: #111f26;
+}
+
+@keyframes guidedTourPulse {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.99);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.035);
+  }
+}
+
+@media (max-width: 640px) {
+  .guided-tour-card {
+    right: 12px;
+    bottom: 12px;
+    left: 12px !important;
+    top: auto !important;
+    width: auto;
+    padding: 18px;
+  }
+
+  .guided-tour-card.is-centered {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guided-tour-spotlight::after {
+    animation: none;
+  }
+}

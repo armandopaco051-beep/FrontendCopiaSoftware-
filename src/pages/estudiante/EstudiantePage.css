@@ -113,6 +113,12 @@
   gap: 18px;
 }
 
+.student-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .student-panel,
 .diagrammer-left-panel,
 .diagram-flow-panel,
