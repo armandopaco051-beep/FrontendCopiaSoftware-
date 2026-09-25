@@ -68,7 +68,13 @@ import {
 import { createDiagramEvent, validateRelation } from '../../features/diagrams/utils/relation-validation'
 import type { Proyecto, ProyectoMiembro } from '../../models/proyecto'
 import { ApiError } from '../../services/api'
-import type { DiagramContent, DiagramEdge, DiagramNode, DiagramaResponse } from '../../services/diagramaService'
+import type {
+  DiagramContent,
+  DiagramEdge,
+  DiagramNode,
+  DiagramaResponse,
+  XmiExportProfile,
+} from '../../services/diagramaService'
 import {
   abrirDiagrama,
   agregarClase,
@@ -770,6 +776,7 @@ export function EstudiantePage({
   const [isLoading, setIsLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isXmiBusy, setIsXmiBusy] = useState(false)
+  const [xmiExportProfile, setXmiExportProfile] = useState<XmiExportProfile>('enterprise_architect')
   const [isMembersLoading, setIsMembersLoading] = useState(false)
   const [isMembersSaving, setIsMembersSaving] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 980)
@@ -1724,18 +1731,23 @@ export function EstudiantePage({
     setMessage('')
 
     try {
-      const blob = await exportarDiagramaXmi(selectedDiagrama.id)
+      const blob = await exportarDiagramaXmi(selectedDiagrama.id, xmiExportProfile)
       const url = window.URL.createObjectURL(blob)
       const anchor = document.createElement('a')
 
       anchor.href = url
-      anchor.download = `${selectedDiagrama.nombre.replace(/\s+/g, '_') || 'diagrama'}.xmi`
+      const profileSuffix = xmiExportProfile === 'enterprise_architect' ? '_EA' : ''
+      anchor.download = `${selectedDiagrama.nombre.replace(/\s+/g, '_') || 'diagrama'}${profileSuffix}.xmi`
       document.body.appendChild(anchor)
       anchor.click()
       anchor.remove()
       window.URL.revokeObjectURL(url)
 
-      setMessage('Archivo XMI exportado correctamente.')
+      setMessage(
+        xmiExportProfile === 'enterprise_architect'
+          ? 'Diagrama completo para Enterprise Architect exportado correctamente.'
+          : 'Archivo XMI estandar exportado correctamente.',
+      )
     } catch (exportError) {
       setError(getProjectActionError(exportError, 'No se pudo exportar el archivo XMI'))
     } finally {
@@ -3145,15 +3157,28 @@ export function EstudiantePage({
                     />
                   </label>
 
-                  <button
-                    className="file-toolbar-button"
-                    disabled={!selectedDiagrama || isXmiBusy}
-                    onClick={exportSelectedXmi}
-                    type="button"
-                  >
-                    <Download size={16} />
-                    Exportar
-                  </button>
+                  <div className="xmi-export-group">
+                    <select
+                      aria-label="Formato de exportacion"
+                      className="xmi-export-profile"
+                      disabled={!selectedDiagrama || isXmiBusy}
+                      onChange={(event) => setXmiExportProfile(event.target.value as XmiExportProfile)}
+                      title="Formato de exportacion"
+                      value={xmiExportProfile}
+                    >
+                      <option value="enterprise_architect">EA completo</option>
+                      <option value="standard">XMI estandar</option>
+                    </select>
+                    <button
+                      className="file-toolbar-button"
+                      disabled={!selectedDiagrama || isXmiBusy}
+                      onClick={exportSelectedXmi}
+                      type="button"
+                    >
+                      <Download size={16} />
+                      Exportar
+                    </button>
+                  </div>
                 </div>
 
                 {selectedProyecto ? (

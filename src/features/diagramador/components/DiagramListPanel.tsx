@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { Clock3, Download, FileCode2, Plus, Trash2, Upload } from 'lucide-react'
-import type { DiagramaResponse } from '../../../services/diagramaService'
+import type { DiagramaResponse, XmiExportProfile } from '../../../services/diagramaService'
 
 type DiagramListPanelProps = {
   canEditDiagram: boolean
@@ -11,7 +12,7 @@ type DiagramListPanelProps = {
   selectedProyecto: unknown
   formatDate: (value?: string | null) => string
   createDiagrama: () => void
-  exportSelectedXmi: () => void
+  exportSelectedXmi: (profile: XmiExportProfile) => void
   importXmiFile: (file: File) => void
   openVersionHistory: () => void
   openDiagrama: (diagramaId: number) => void
@@ -36,6 +37,8 @@ export function DiagramListPanel({
   selectedProyecto,
   setNewDiagramName,
 }: DiagramListPanelProps) {
+  const [xmiExportProfile, setXmiExportProfile] = useState<XmiExportProfile>('enterprise_architect')
+
   return (
     <>
       <div className="panel-title">
@@ -77,15 +80,27 @@ export function DiagramListPanel({
           />
         </label>
 
-        <button
-          className="xmi-action"
-          disabled={!selectedDiagrama || isXmiBusy}
-          onClick={exportSelectedXmi}
-          type="button"
-        >
-          <Download size={15} />
-          <span>Exportar XMI</span>
-        </button>
+        <div className="xmi-export-group">
+          <select
+            aria-label="Formato de exportacion"
+            className="xmi-export-profile"
+            disabled={!selectedDiagrama || isXmiBusy}
+            onChange={(event) => setXmiExportProfile(event.target.value as XmiExportProfile)}
+            value={xmiExportProfile}
+          >
+            <option value="enterprise_architect">EA completo</option>
+            <option value="standard">XMI estandar</option>
+          </select>
+          <button
+            className="xmi-action"
+            disabled={!selectedDiagrama || isXmiBusy}
+            onClick={() => exportSelectedXmi(xmiExportProfile)}
+            type="button"
+          >
+            <Download size={15} />
+            <span>Exportar</span>
+          </button>
+        </div>
       </div>
 
       <button

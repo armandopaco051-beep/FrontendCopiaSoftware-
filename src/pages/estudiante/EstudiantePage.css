@@ -704,6 +704,38 @@
   gap: 8px;
 }
 
+.xmi-export-group {
+  display: inline-grid;
+  grid-template-columns: minmax(112px, 1fr) auto;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.xmi-export-profile {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid #303030;
+  border-radius: 12px;
+  background: #050505;
+  color: #dbeafe;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 0 9px;
+}
+
+.xmi-export-profile:hover:not(:disabled),
+.xmi-export-profile:focus-visible {
+  border-color: #8fb6ff;
+  outline: none;
+}
+
+.xmi-export-profile:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .file-toolbar-button {
   position: relative;
   display: inline-flex;
@@ -2716,6 +2748,10 @@
     flex: 1 1 0;
   }
 
+  .xmi-export-group {
+    flex: 1 1 260px;
+  }
+
   .react-flow-canvas {
     height: clamp(370px, 52svh, 540px);
     min-height: 370px;
@@ -2978,6 +3014,7 @@
   .diagram-file-toolbar,
   .diagram-picker,
   .diagram-file-actions,
+  .xmi-export-group,
   .diagram-new-inline,
   .student-create-row,
   .xmi-actions,

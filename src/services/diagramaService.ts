@@ -35,6 +35,8 @@ export type DiagramContent = {
   edges: DiagramEdge[]
 }
 
+export type XmiExportProfile = 'standard' | 'enterprise_architect'
+
 export type DiagramaCreate = {
   id_proyecto: number
   nombre: string
@@ -222,10 +224,13 @@ export async function importarXmiEnDiagrama(diagramaId: number, file: File) {
   return data as DiagramaResponse
 }
 
-export async function exportarDiagramaXmi(diagramaId: number) {
+export async function exportarDiagramaXmi(
+  diagramaId: number,
+  profile: XmiExportProfile = 'enterprise_architect',
+) {
   const token = localStorage.getItem('token')
 
-  const response = await fetch(`${API_URL}/diagramas/${diagramaId}/export/xmi`, {
+  const response = await fetch(`${API_URL}/diagramas/${diagramaId}/export/xmi?profile=${encodeURIComponent(profile)}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   })
 
