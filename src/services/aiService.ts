@@ -1,7 +1,7 @@
 import { ApiError } from './api'
 import type { DiagramaResponse } from './diagramaService'
 
-export const AI_API_URL = (import.meta.env.VITE_AI_API_URL ?? 'http://127.0.0.1:8002').replace(/\/$/, '')
+export const AI_API_URL = (import.meta.env.VITE_AI_API_URL ?? 'https://iabackend-copia.onrender.com').replace(/\/$/, '')
 
 export type AiPlannerRequest = {
   message: string
@@ -20,11 +20,11 @@ export type AiPlannerAction = {
 export type AiPlannerQuestion =
   | string
   | {
-      question?: string
-      text?: string
-      message?: string
-      [key: string]: unknown
-    }
+    question?: string
+    text?: string
+    message?: string
+    [key: string]: unknown
+  }
 
 export type AiPlannerResponse = {
   intent: string
@@ -330,4 +330,4 @@ export async function downloadGeneratedBackend({
   anchor.remove()
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
-  
+
