@@ -1,7 +1,7 @@
 import { API_URL } from './api'
 
 const WS_URL = (
-  import.meta.env.VITE_WS_URL ?? API_URL.replace(/^http/, 'ws')
+  import.meta.env.VITE_WS_URL || API_URL.replace(/^http/, 'ws')
 ).replace(/\/$/, '')
 const MAX_RECONNECT_ATTEMPTS = 3
 const RECONNECT_DELAY_MS = 2000

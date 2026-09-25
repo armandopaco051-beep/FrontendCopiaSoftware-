@@ -1,7 +1,7 @@
 import { ApiError } from './api'
 import type { DiagramaResponse } from './diagramaService'
 
-export const AI_API_URL = (import.meta.env.VITE_AI_API_URL ?? 'https://iabackend-copia.onrender.com').replace(/\/$/, '')
+export const AI_API_URL = (import.meta.env.VITE_AI_API_URL || 'https://iabackend-copia.onrender.com').replace(/\/$/, '')
 
 export type AiPlannerRequest = {
   message: string
@@ -330,4 +330,3 @@ export async function downloadGeneratedBackend({
   anchor.remove()
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
-

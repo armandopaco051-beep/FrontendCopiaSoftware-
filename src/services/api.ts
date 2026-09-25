@@ -1,4 +1,4 @@
-export const API_URL = (import.meta.env.VITE_API_URL ?? 'https://backendcopia-software.onrender.com').replace(/\/$/, '')
+export const API_URL = (import.meta.env.VITE_API_URL || 'https://backendcopia-software.onrender.com').replace(/\/$/, '')
 export const AUTH_UNAUTHORIZED_EVENT = 'drawschema:auth-unauthorized'
 
 export class ApiError extends Error {
