@@ -763,7 +763,7 @@ export function AiPlannerPanel({
               <Loader2 className="ai-spin" size={17} />
               <span>
                 {pendingPlanId !== null
-                  ? 'La cola espera tu decisión sobre el plan anterior.'
+                  ? 'La cola espera a que se aplique y guarde el plan anterior.'
                   : localRequestStartedAt !== null
                   ? `Esperando a la IA local · ${localElapsedSeconds} s transcurridos. ${localTypicalSeconds === null
                     ? 'La consulta puede estar en cola.'
@@ -777,11 +777,6 @@ export function AiPlannerPanel({
                   ? ` · En cola en este chat: ${pendingSends - 1}`
                   : ''}
               </span>
-              {pendingPlanId !== null ? (
-                <button type="button" disabled={isApplying} onClick={finishPlanDecision}>
-                  Continuar sin aplicar
-                </button>
-              ) : null}
             </div>
           </article>
         ) : null}
