@@ -13,24 +13,35 @@ import {
   executeDiagramPlan,
 } from '../../services/aiService'
 
+type SpeechRecognitionAlternativeLike = {
+  transcript: string
+  confidence?: number
+}
+
 type SpeechRecognitionResultLike = {
   isFinal: boolean
-  0: { transcript: string }
+  length: number
+  0: SpeechRecognitionAlternativeLike
+  [index: number]: SpeechRecognitionAlternativeLike
 }
 
 type SpeechRecognitionEventLike = Event & {
-  results: ArrayLike<SpeechRecognitionResultLike>
+  resultIndex: number
+  results: {
+    length: number
+    [index: number]: SpeechRecognitionResultLike
+  }
 }
 
 type SpeechRecognitionErrorEventLike = Event & {
   error: string
+  message?: string
 }
 
 type BrowserSpeechRecognition = {
   continuous: boolean
   interimResults: boolean
   lang: string
-  processLocally?: boolean
   onstart: (() => void) | null
   onresult: ((event: SpeechRecognitionEventLike) => void) | null
   onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null
@@ -40,20 +51,19 @@ type BrowserSpeechRecognition = {
   abort: () => void
 }
 
-type LocalSpeechRecognitionOptions = {
-  langs: string[]
-  processLocally: true
-}
-
 type BrowserSpeechRecognitionConstructor = {
   new(): BrowserSpeechRecognition
-  available?: (
-    options: LocalSpeechRecognitionOptions,
-  ) => Promise<'available' | 'downloadable' | 'downloading' | 'unavailable'>
-  install?: (options: LocalSpeechRecognitionOptions) => Promise<boolean>
 }
 
-const DICTATION_LANGUAGE = 'es-ES'
+function getDictationLanguage(): string {
+  if (typeof navigator !== 'undefined' && navigator.language) {
+    const lang = navigator.language
+    if (lang.toLowerCase().startsWith('es')) {
+      return lang
+    }
+  }
+  return 'es-ES'
+}
 
 function getSpeechRecognitionConstructor() {
   const browserWindow = window as typeof window & {
@@ -342,131 +352,142 @@ export function AiPlannerPanel({
 
   async function toggleVoiceInput() {
     if (isListening) {
+      window.clearTimeout(speechTimeoutRef.current)
       speechRecognitionRef.current?.stop()
       return
     }
     if (isBusy || !chat.ready || speechRecognitionRef.current) return
 
     if (!window.isSecureContext) {
-      pushError('El microfono requiere HTTPS o localhost. Abre la aplicacion desde una conexion segura.')
+      pushError('El micrófono requiere HTTPS o localhost. Abre la aplicación desde una conexión segura.')
       return
     }
 
     const SpeechRecognition = getSpeechRecognitionConstructor()
     if (!SpeechRecognition) {
-      pushError('Este navegador no permite dictado de voz. Usa Chrome o Edge actualizado.')
-      return
-    }
-
-    if (!SpeechRecognition.available || !SpeechRecognition.install) {
       pushError(
-        'Tu navegador no admite dictado local. Actualiza Chrome o Edge para transcribir sin enviar el audio a un servicio externo.',
+        'Este navegador no soporta la API de voz nativa (Web Speech API). Te recomendamos usar Google Chrome o Microsoft Edge.',
       )
       return
     }
 
-    setIsPreparingVoice(true)
-    try {
-      const localOptions: LocalSpeechRecognitionOptions = {
-        langs: [DICTATION_LANGUAGE],
-        processLocally: true,
-      }
-      const availability = await SpeechRecognition.available(localOptions)
-
-      if (availability === 'unavailable') {
-        pushError('El paquete de dictado local en espanol no esta disponible para este navegador o dispositivo.')
-        return
-      }
-
-      if (availability !== 'available') {
-        const installed = await SpeechRecognition.install(localOptions)
-        if (!installed) {
-          pushError('No se pudo instalar el paquete de dictado local en espanol.')
-          return
+    // Solicitar permiso de micrófono con getUserMedia si está disponible para asegurar el diálogo de permisos del navegador
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        // Detener inmediatamente las pistas para dejar libre el micrófono para SpeechRecognition
+        stream.getTracks().forEach((track) => track.stop())
+      } catch (mediaError) {
+        if (mediaError instanceof DOMException) {
+          if (mediaError.name === 'NotAllowedError' || mediaError.name === 'PermissionDeniedError') {
+            pushError('Permiso denegado. Haz clic en el icono del candado en la barra de direcciones y activa el micrófono.')
+            return
+          }
+          if (mediaError.name === 'NotFoundError' || mediaError.name === 'DevicesNotFoundError') {
+            pushError('No se encontró ningún micrófono conectado en tu equipo.')
+            return
+          }
         }
       }
+    }
 
-      if (!panelMountedRef.current) return
+    if (!panelMountedRef.current) return
 
+    setIsPreparingVoice(true)
+    try {
       const recognition = new SpeechRecognition()
-      recognition.lang = DICTATION_LANGUAGE
-      recognition.processLocally = true
-      recognition.continuous = false
+      recognition.lang = getDictationLanguage()
+      recognition.continuous = true
       recognition.interimResults = true
+
       dictationBaseTextRef.current = message.trimEnd()
+      let accumulatedFinal = ''
       let receivedText = false
+
+      const resetInactivityTimeout = (seconds = 10) => {
+        window.clearTimeout(speechTimeoutRef.current)
+        speechTimeoutRef.current = window.setTimeout(() => {
+          if (speechRecognitionRef.current === recognition) {
+            recognition.stop()
+          }
+        }, seconds * 1000)
+      }
+
       const finishDictation = () => {
         if (speechRecognitionRef.current !== recognition) return false
         window.clearTimeout(speechTimeoutRef.current)
         speechRecognitionRef.current = null
         setIsListening(false)
+        setIsPreparingVoice(false)
         return true
       }
 
-      recognition.onstart = () => setIsListening(true)
+      recognition.onstart = () => {
+        setIsPreparingVoice(false)
+        setIsListening(true)
+        resetInactivityTimeout(12)
+      }
+
       recognition.onresult = (event) => {
         if (speechRecognitionRef.current !== recognition) return
-        let finalTranscript = ''
-        let interimTranscript = ''
 
-        for (let index = 0; index < event.results.length; index += 1) {
+        let interimTranscript = ''
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
           const result = event.results[index]
           const transcript = result[0]?.transcript?.trim() ?? ''
           if (!transcript) continue
 
           if (result.isFinal) {
-            finalTranscript += `${finalTranscript ? ' ' : ''}${transcript}`
+            accumulatedFinal += `${accumulatedFinal ? ' ' : ''}${transcript}`
           } else {
             interimTranscript += `${interimTranscript ? ' ' : ''}${transcript}`
           }
         }
 
-        const spokenText = [finalTranscript, interimTranscript].filter(Boolean).join(' ')
-        if (!spokenText) return
-        receivedText = true
-        window.clearTimeout(speechTimeoutRef.current)
-        const baseText = dictationBaseTextRef.current
-        setMessage([baseText, spokenText].filter(Boolean).join(baseText ? ' ' : ''))
+        const spokenText = [accumulatedFinal, interimTranscript].filter(Boolean).join(' ')
+        if (spokenText) {
+          receivedText = true
+          resetInactivityTimeout(8)
+          const baseText = dictationBaseTextRef.current
+          setMessage([baseText, spokenText].filter(Boolean).join(baseText ? ' ' : ''))
+        }
       }
+
       recognition.onerror = (event) => {
         if (!finishDictation()) return
         if (event.error !== 'aborted') {
           const errorMessage = event.error === 'not-allowed'
-            ? 'Debes permitir el acceso al microfono para usar el dictado.'
+            ? 'Debes permitir el acceso al micrófono para usar el dictado (candado en la barra de URL).'
             : event.error === 'no-speech'
-              ? 'No se detecto voz. Intenta hablar mas cerca del microfono.'
+              ? (receivedText ? null : 'No se detectó voz. Intenta hablar más cerca del micrófono.')
               : event.error === 'audio-capture'
-                ? 'No se encontro un microfono disponible.'
-                : event.error === 'language-not-supported' || event.error === 'language-unavailable'
-                  ? 'Falta el paquete local de espanol. Vuelve a presionar el microfono para instalarlo.'
-                  : event.error === 'network'
-                    ? 'El navegador no pudo preparar el reconocimiento local. Actualizalo e instala el paquete de idioma.'
-                    : `No se pudo reconocer la voz (${event.error}).`
-          pushError(errorMessage)
+                ? 'No se encontró un micrófono disponible o está en uso por otra aplicación.'
+                : event.error === 'network'
+                  ? 'Error de conexión con el servicio de voz del navegador. Revisa tu conexión a internet.'
+                  : `No se pudo reconocer la voz (${event.error}).`
+
+          if (errorMessage) {
+            pushError(errorMessage)
+          }
         }
       }
+
       recognition.onend = () => {
-        if (finishDictation() && !receivedText) {
-          pushError('El dictado terminó sin texto. Verifica el micrófono o haz clic en el campo y usa Windows + H.')
-        }
+        finishDictation()
       }
 
       speechRecognitionRef.current = recognition
       recognition.start()
-      speechTimeoutRef.current = window.setTimeout(() => {
-        if (!finishDictation()) return
-        recognition.abort()
-        pushError('El navegador no devolvió texto. Verifica el micrófono o haz clic en el campo y usa Windows + H.')
-      }, 12000)
     } catch (error) {
-      const message = error instanceof DOMException && error.name === 'NotAllowedError'
-        ? 'Debes permitir el acceso al microfono para usar el dictado.'
-        : 'No se pudo preparar el dictado local. Verifica que Chrome o Edge esten actualizados.'
-      pushError(message)
       speechRecognitionRef.current = null
       setIsListening(false)
-    } finally {
       setIsPreparingVoice(false)
+      const message = error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'Debes permitir el acceso al micrófono para usar el dictado.'
+        : error instanceof Error
+          ? error.message
+          : 'No se pudo iniciar el dictado por voz.'
+      pushError(message)
     }
   }
 
