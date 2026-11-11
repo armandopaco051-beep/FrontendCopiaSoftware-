@@ -169,6 +169,8 @@ export function AiPlannerPanel({
   const [pendingSends, setPendingSends] = useState(0)
   const saveQueueRef = useRef(Promise.resolve())
   const replyQueueRef = useRef(Promise.resolve())
+  const planDecisionRef = useRef<(() => void) | null>(null)
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null)
   const [localRequestStartedAt, setLocalRequestStartedAt] = useState<number | null>(null)
   const [localElapsedSeconds, setLocalElapsedSeconds] = useState(0)
   const [localTypicalSeconds, setLocalTypicalSeconds] = useState<number | null>(null)
@@ -244,6 +246,8 @@ export function AiPlannerPanel({
     panelMountedRef.current = true
     return () => {
       panelMountedRef.current = false
+      planDecisionRef.current?.()
+      planDecisionRef.current = null
       window.clearTimeout(speechTimeoutRef.current)
       speechRecognitionRef.current?.abort()
       speechRecognitionRef.current = null
@@ -292,7 +296,31 @@ export function AiPlannerPanel({
     return true
   }
 
-  async function handleApplyPlan(plan: ActionablePlan) {
+  function finishPlanDecision() {
+    const resume = planDecisionRef.current
+    planDecisionRef.current = null
+    setPendingPlanId(null)
+    resume?.()
+  }
+
+  async function processQueuedReply(messageId: number, diagramId?: number) {
+    setIsLoading(true)
+    try {
+      const answer = await requestChatAnswer(messageId, diagramId)
+      const plan = readStoredPlan(answer.resultado_ia)
+      if (!panelMountedRef.current || !canEdit || !plan?.can_execute || !plan.actions.length) return
+
+      setIsLoading(false)
+      await new Promise<void>((resume) => {
+        planDecisionRef.current = resume
+        setPendingPlanId(`stored-${answer.id}`)
+      })
+    } finally {
+      if (panelMountedRef.current) setIsLoading(false)
+    }
+  }
+
+  async function handleApplyPlan(plan: ActionablePlan, chatMessageId?: string) {
     if (!hasActiveDiagram()) return
     if (!autorCodigo) {
       pushError('No se encontro el codigo del usuario.')
@@ -329,6 +357,7 @@ export function AiPlannerPanel({
       }
       if (!panelMountedRef.current) return
       onDiagramUpdated?.(result.diagrama)
+      if (chatMessageId === pendingPlanId) finishPlanDecision()
       setMessages((current) => [
         ...current,
         createMessage('assistant', result.message || 'Listo, actualice el diagrama.'),
@@ -382,16 +411,13 @@ export function AiPlannerPanel({
     replyQueueRef.current = replyQueueRef.current.then(async () => {
       const stored = await saved
       if (!stored || !panelMountedRef.current) return
-      setIsLoading(true)
       try {
-        await requestChatAnswer(stored.id, stored.diagrama_id ?? undefined)
+        await processQueuedReply(stored.id, stored.diagrama_id ?? undefined)
       } catch (error) {
         if (panelMountedRef.current) {
           const detail = error instanceof Error ? error.message : 'No se pudo completar la solicitud.'
           pushError(`Tu consulta se guardó. Puedes reintentar la respuesta: ${detail}`)
         }
-      } finally {
-        if (panelMountedRef.current) setIsLoading(false)
       }
     }).finally(finish)
   }
@@ -402,7 +428,7 @@ export function AiPlannerPanel({
     setIsLoading(true)
     replyQueueRef.current = replyQueueRef.current.then(async () => {
       try {
-        await requestChatAnswer(messageId, activeDiagramaId > 0 ? activeDiagramaId : undefined)
+        await processQueuedReply(messageId, activeDiagramaId > 0 ? activeDiagramaId : undefined)
       } catch (error) {
         if (panelMountedRef.current) {
           pushError(error instanceof Error ? error.message : 'No se pudo recuperar la respuesta.')
@@ -705,8 +731,10 @@ export function AiPlannerPanel({
                       <>
                         <button
                           className="primary-action ai-apply-button"
-                          disabled={isBusy || chat.blocked || !canEdit}
-                          onClick={() => handleApplyPlan(chatMessage.plan!)}
+                          disabled={composerBusy || isLoading || isListening || chat.blocked || !canEdit
+                            || (pendingPlanId !== null && pendingPlanId !== chatMessage.id)
+                            || (pendingPlanId === null && pendingSends > 0)}
+                          onClick={() => handleApplyPlan(chatMessage.plan!, chatMessage.id)}
                           type="button"
                         >
                           {isApplying ? 'Aplicando...' : 'Aplicar plan'}
@@ -734,7 +762,9 @@ export function AiPlannerPanel({
             <div className="ai-chat-bubble ai-typing">
               <Loader2 className="ai-spin" size={17} />
               <span>
-                {localRequestStartedAt !== null
+                {pendingPlanId !== null
+                  ? 'La cola espera tu decisión sobre el plan anterior.'
+                  : localRequestStartedAt !== null
                   ? `Esperando a la IA local · ${localElapsedSeconds} s transcurridos. ${localTypicalSeconds === null
                     ? 'La consulta puede estar en cola.'
                     : `Duración habitual en esta sesión: ~${Math.round(localTypicalSeconds)} s. Puede variar según la cola.`}`
@@ -743,10 +773,15 @@ export function AiPlannerPanel({
                   : isPreparingVoice
                     ? 'Preparando dictado local...'
                     : groupPending ? 'Enviando mensaje...' : 'Guardando consulta y preparando respuesta...'}
-                {isLoading && pendingSends > 1
+                {(isLoading || pendingPlanId !== null) && pendingSends > 1
                   ? ` · En cola en este chat: ${pendingSends - 1}`
                   : ''}
               </span>
+              {pendingPlanId !== null ? (
+                <button type="button" disabled={isApplying} onClick={finishPlanDecision}>
+                  Continuar sin aplicar
+                </button>
+              ) : null}
             </div>
           </article>
         ) : null}
