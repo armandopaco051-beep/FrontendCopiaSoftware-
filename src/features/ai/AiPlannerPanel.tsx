@@ -166,6 +166,12 @@ export function AiPlannerPanel({
   const [localDiagramaId, setLocalDiagramaId] = useState(diagramaId ? String(diagramaId) : '')
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [pendingSends, setPendingSends] = useState(0)
+  const saveQueueRef = useRef(Promise.resolve())
+  const replyQueueRef = useRef(Promise.resolve())
+  const [localRequestStartedAt, setLocalRequestStartedAt] = useState<number | null>(null)
+  const [localElapsedSeconds, setLocalElapsedSeconds] = useState(0)
+  const [localTypicalSeconds, setLocalTypicalSeconds] = useState<number | null>(null)
   const [isApplying, setIsApplying] = useState(false)
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false)
   const [isPreparingVoice, setIsPreparingVoice] = useState(false)
@@ -178,7 +184,8 @@ export function AiPlannerPanel({
 
   const activeProyectoId = proyectoId ?? Number(localProyectoId)
   const activeDiagramaId = diagramaId ?? Number(localDiagramaId)
-  const isBusy = isLoading || isApplying || isAnalyzingImage || isPreparingVoice
+  const composerBusy = isApplying || isAnalyzingImage || isPreparingVoice
+  const isBusy = isLoading || pendingSends > 0 || composerBusy
   const groupPending = chatScope === 'grupal' // Shared image attachments are not enabled yet.
   const currentUser = getUserProfileFromToken(localStorage.getItem('token'))
   const chat = useProjectChat(activeProyectoId, chatScope, currentUser?.codigo || autorCodigo || '')
@@ -247,6 +254,32 @@ export function AiPlannerPanel({
     setMessages((current) => [...current, createMessage('error', text)])
   }
 
+  useEffect(() => {
+    if (localRequestStartedAt === null) return
+    const timer = window.setInterval(() => {
+      setLocalElapsedSeconds(Math.floor((performance.now() - localRequestStartedAt) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [localRequestStartedAt])
+
+  async function requestChatAnswer(messageId: number, diagramId?: number) {
+    if (textProvider !== 'local') return chat.respond(messageId, diagramId, textProvider)
+
+    const startedAt = performance.now()
+    setLocalElapsedSeconds(0)
+    setLocalRequestStartedAt(startedAt)
+    try {
+      const answer = await chat.respond(messageId, diagramId, textProvider)
+      const seconds = (performance.now() - startedAt) / 1000
+      if (seconds >= 1) {
+        setLocalTypicalSeconds((previous) => previous === null ? seconds : previous * 0.7 + seconds * 0.3)
+      }
+      return answer
+    } finally {
+      setLocalRequestStartedAt(null)
+    }
+  }
+
   function hasActiveDiagram() {
     if (!Number.isFinite(activeProyectoId) || activeProyectoId <= 0) {
       pushError('Selecciona o escribe un proyecto valido.')
@@ -311,43 +344,76 @@ export function AiPlannerPanel({
     }
   }
 
-  async function handlePlan() {
-    if (isBusy || !chat.ready) return
+  function handlePlan() {
+    if (composerBusy || isListening || !chat.ready) return
     const cleanMessage = message.trim()
     if (!cleanMessage) return
     if (chatScope === 'individual' && !hasActiveDiagram()) return
-    setIsLoading(true)
-    let saved = false
-    try {
-      const stored = await chat.send(
-        cleanMessage,
-        Number.isInteger(activeDiagramaId) && activeDiagramaId > 0 ? activeDiagramaId : undefined,
-      )
-      saved = true
-      setMessage('')
-      if (chatScope === 'individual' || /@ia\b/i.test(cleanMessage)) {
-        await chat.respond(stored.id, stored.diagrama_id ?? undefined, textProvider)
+
+    const diagramId = Number.isInteger(activeDiagramaId) && activeDiagramaId > 0
+      ? activeDiagramaId : undefined
+    const needsReply = chatScope === 'individual' || /@ia\b/i.test(cleanMessage)
+    setMessage('')
+    setPendingSends((count) => count + 1)
+
+    // Save messages in submission order, independently of the inference in progress.
+    const saved = saveQueueRef.current.then(async () => {
+      try {
+        return await chat.send(cleanMessage, diagramId)
+      } catch (error) {
+        if (panelMountedRef.current) {
+          const detail = error instanceof Error ? error.message : 'Error de conexión.'
+          pushError(`No se pudo guardar el mensaje: ${detail}`)
+          setMessage((draft) => draft ? `${cleanMessage}\n${draft}` : cleanMessage)
+        }
+        return null
       }
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : 'No se pudo completar la solicitud.'
-      pushError(saved
-        ? `Tu consulta se guardó. Puedes reintentar la respuesta: ${detail}`
-        : `No se pudo guardar el mensaje: ${detail}`)
-    } finally {
-      setIsLoading(false)
+    })
+    saveQueueRef.current = saved.then(() => undefined)
+    const finish = () => {
+      if (panelMountedRef.current) setPendingSends((count) => count - 1)
     }
+
+    if (!needsReply) {
+      void saved.finally(finish)
+      return
+    }
+
+    replyQueueRef.current = replyQueueRef.current.then(async () => {
+      const stored = await saved
+      if (!stored || !panelMountedRef.current) return
+      setIsLoading(true)
+      try {
+        await requestChatAnswer(stored.id, stored.diagrama_id ?? undefined)
+      } catch (error) {
+        if (panelMountedRef.current) {
+          const detail = error instanceof Error ? error.message : 'No se pudo completar la solicitud.'
+          pushError(`Tu consulta se guardó. Puedes reintentar la respuesta: ${detail}`)
+        }
+      } finally {
+        if (panelMountedRef.current) setIsLoading(false)
+      }
+    }).finally(finish)
   }
 
-  async function retryAnswer(messageId: number) {
+  function retryAnswer(messageId: number) {
     if (isBusy || !chat.ready) return
+    setPendingSends((count) => count + 1)
     setIsLoading(true)
-    try {
-      await chat.respond(messageId, activeDiagramaId > 0 ? activeDiagramaId : undefined, textProvider)
-    } catch (error) {
-      pushError(error instanceof Error ? error.message : 'No se pudo recuperar la respuesta.')
-    } finally {
-      setIsLoading(false)
-    }
+    replyQueueRef.current = replyQueueRef.current.then(async () => {
+      try {
+        await requestChatAnswer(messageId, activeDiagramaId > 0 ? activeDiagramaId : undefined)
+      } catch (error) {
+        if (panelMountedRef.current) {
+          pushError(error instanceof Error ? error.message : 'No se pudo recuperar la respuesta.')
+        }
+      } finally {
+        if (panelMountedRef.current) {
+          setPendingSends((count) => count - 1)
+          setIsLoading(false)
+        }
+      }
+    })
   }
 
   async function toggleVoiceInput() {
@@ -356,7 +422,7 @@ export function AiPlannerPanel({
       speechRecognitionRef.current?.stop()
       return
     }
-    if (isBusy || !chat.ready || speechRecognitionRef.current) return
+    if (composerBusy || !chat.ready || speechRecognitionRef.current) return
 
     if (!window.isSecureContext) {
       pushError('El micrófono requiere HTTPS o localhost. Abre la aplicación desde una conexión segura.')
@@ -663,16 +729,23 @@ export function AiPlannerPanel({
           )
         })}
 
-        {isLoading || isAnalyzingImage || isPreparingVoice ? (
+        {isLoading || pendingSends > 0 || isAnalyzingImage || isPreparingVoice ? (
           <article className="ai-chat-message assistant">
             <div className="ai-chat-bubble ai-typing">
               <Loader2 className="ai-spin" size={17} />
               <span>
-                {isAnalyzingImage
+                {localRequestStartedAt !== null
+                  ? `Esperando a la IA local · ${localElapsedSeconds} s transcurridos. ${localTypicalSeconds === null
+                    ? 'La consulta puede estar en cola.'
+                    : `Duración habitual en esta sesión: ~${Math.round(localTypicalSeconds)} s. Puede variar según la cola.`}`
+                  : isAnalyzingImage
                   ? 'Leyendo el diagrama de la imagen...'
                   : isPreparingVoice
                     ? 'Preparando dictado local...'
                     : groupPending ? 'Enviando mensaje...' : 'Guardando consulta y preparando respuesta...'}
+                {isLoading && pendingSends > 1
+                  ? ` · En cola en este chat: ${pendingSends - 1}`
+                  : ''}
               </span>
             </div>
           </article>
@@ -715,7 +788,7 @@ export function AiPlannerPanel({
             aria-label={isListening ? 'Detener dictado' : 'Dictar mensaje'}
             aria-pressed={isListening}
             className={isListening ? 'ai-composer-icon active' : 'ai-composer-icon'}
-            disabled={!isListening && (isBusy || !chat.ready)}
+            disabled={!isListening && (composerBusy || !chat.ready)}
             onClick={toggleVoiceInput}
             title={isListening ? 'Detener dictado' : 'Dictar mensaje'}
             type="button"
@@ -724,7 +797,7 @@ export function AiPlannerPanel({
           </button>
         </div>
         <textarea
-          disabled={isBusy || isListening || !chat.ready}
+          disabled={composerBusy || isListening || !chat.ready}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -735,8 +808,8 @@ export function AiPlannerPanel({
           placeholder={chat.loading ? 'Cargando conversación...' : !chat.ready ? 'Selecciona un proyecto y conecta el chat' : isListening ? 'Escuchando...' : groupPending ? 'Escribe al equipo o menciona @IA...'  : 'Pide algo para tu diagrama...'}
           value={message}
         />
-        <button aria-label={groupPending ? 'Enviar mensaje al proyecto' : 'Enviar consulta a la IA'} disabled={isBusy || isListening || !chat.ready || !message.trim()} onClick={handlePlan} title="Enviar" type="button">
-          {isLoading ? <Loader2 className="ai-spin" size={18} /> : <Send size={18} />}
+        <button aria-label={groupPending ? 'Enviar mensaje al proyecto' : 'Enviar consulta a la IA'} disabled={composerBusy || isListening || !chat.ready || !message.trim()} onClick={handlePlan} title="Enviar" type="button">
+          <Send size={18} />
         </button>
       </div>
     </section>
