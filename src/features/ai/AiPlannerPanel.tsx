@@ -167,7 +167,8 @@ export function AiPlannerPanel({
   const [message, setMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [pendingSends, setPendingSends] = useState(0)
-  const saveQueueRef = useRef(Promise.resolve())
+  const [queuedMessages, setQueuedMessages] = useState<Array<{ id: number; key: string; text: string }>>([])
+  const nextQueuedId = useRef(0)
   const replyQueueRef = useRef(Promise.resolve())
   const planDecisionRef = useRef<(() => void) | null>(null)
   const [pendingPlanId, setPendingPlanId] = useState<string | null>(null)
@@ -382,44 +383,38 @@ export function AiPlannerPanel({
     const diagramId = Number.isInteger(activeDiagramaId) && activeDiagramaId > 0
       ? activeDiagramaId : undefined
     const needsReply = chatScope === 'individual' || /@ia\b/i.test(cleanMessage)
+    const queuedId = ++nextQueuedId.current
     setMessage('')
     setPendingSends((count) => count + 1)
+    setQueuedMessages((queue) => [...queue, { id: queuedId, key: conversationKey, text: cleanMessage }])
 
-    // Save messages in submission order, independently of the inference in progress.
-    const saved = saveQueueRef.current.then(async () => {
+    // Wait for the previous reply and any plan save before posting this message.
+    replyQueueRef.current = replyQueueRef.current.then(async () => {
+      if (!panelMountedRef.current) return
+
+      let saved = false
       try {
-        return await chat.send(cleanMessage, diagramId)
+        const stored = await chat.send(cleanMessage, diagramId)
+        saved = true
+        if (!panelMountedRef.current) return
+        setQueuedMessages((queue) => queue.filter((item) => item.id !== queuedId))
+        if (needsReply) await processQueuedReply(stored.id, stored.diagrama_id ?? undefined)
       } catch (error) {
-        if (panelMountedRef.current) {
-          const detail = error instanceof Error ? error.message : 'Error de conexión.'
-          pushError(`No se pudo guardar el mensaje: ${detail}`)
+        if (!panelMountedRef.current) return
+        const detail = error instanceof Error ? error.message : 'No se pudo completar la solicitud.'
+        if (saved) {
+          pushError(`Tu consulta se guardó. Puedes reintentar la respuesta: ${detail}`)
+        } else {
+          pushError(`No se pudo enviar el mensaje: ${detail}`)
           setMessage((draft) => draft ? `${cleanMessage}\n${draft}` : cleanMessage)
         }
-        return null
-      }
-    })
-    saveQueueRef.current = saved.then(() => undefined)
-    const finish = () => {
-      if (panelMountedRef.current) setPendingSends((count) => count - 1)
-    }
-
-    if (!needsReply) {
-      void saved.finally(finish)
-      return
-    }
-
-    replyQueueRef.current = replyQueueRef.current.then(async () => {
-      const stored = await saved
-      if (!stored || !panelMountedRef.current) return
-      try {
-        await processQueuedReply(stored.id, stored.diagrama_id ?? undefined)
-      } catch (error) {
+      } finally {
         if (panelMountedRef.current) {
-          const detail = error instanceof Error ? error.message : 'No se pudo completar la solicitud.'
-          pushError(`Tu consulta se guardó. Puedes reintentar la respuesta: ${detail}`)
+          if (!saved) setQueuedMessages((queue) => queue.filter((item) => item.id !== queuedId))
+          setPendingSends((count) => count - 1)
         }
       }
-    }).finally(finish)
+    })
   }
 
   function retryAnswer(messageId: number) {
@@ -780,6 +775,14 @@ export function AiPlannerPanel({
             </div>
           </article>
         ) : null}
+        {queuedMessages.filter((item) => item.key === conversationKey).map((item) => (
+          <article className="ai-chat-message user" key={item.id}>
+            <div className="ai-chat-bubble">
+              <small>En espera de envío</small>
+              <p>{item.text}</p>
+            </div>
+          </article>
+        ))}
       </div>
 
       {!proyectoId || !diagramaId ? (
