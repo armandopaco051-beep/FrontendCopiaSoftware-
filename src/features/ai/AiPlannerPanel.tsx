@@ -162,6 +162,7 @@ export function AiPlannerPanel({
   const [isListening, setIsListening] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const speechTimeoutRef = useRef<number | undefined>(undefined)
   const dictationBaseTextRef = useRef('')
   const panelMountedRef = useRef(true)
 
@@ -226,6 +227,7 @@ export function AiPlannerPanel({
     panelMountedRef.current = true
     return () => {
       panelMountedRef.current = false
+      window.clearTimeout(speechTimeoutRef.current)
       speechRecognitionRef.current?.abort()
       speechRecognitionRef.current = null
     }
@@ -389,12 +391,21 @@ export function AiPlannerPanel({
       const recognition = new SpeechRecognition()
       recognition.lang = DICTATION_LANGUAGE
       recognition.processLocally = true
-      recognition.continuous = true
+      recognition.continuous = false
       recognition.interimResults = true
       dictationBaseTextRef.current = message.trimEnd()
+      let receivedText = false
+      const finishDictation = () => {
+        if (speechRecognitionRef.current !== recognition) return false
+        window.clearTimeout(speechTimeoutRef.current)
+        speechRecognitionRef.current = null
+        setIsListening(false)
+        return true
+      }
 
       recognition.onstart = () => setIsListening(true)
       recognition.onresult = (event) => {
+        if (speechRecognitionRef.current !== recognition) return
         let finalTranscript = ''
         let interimTranscript = ''
 
@@ -411,10 +422,14 @@ export function AiPlannerPanel({
         }
 
         const spokenText = [finalTranscript, interimTranscript].filter(Boolean).join(' ')
+        if (!spokenText) return
+        receivedText = true
+        window.clearTimeout(speechTimeoutRef.current)
         const baseText = dictationBaseTextRef.current
         setMessage([baseText, spokenText].filter(Boolean).join(baseText ? ' ' : ''))
       }
       recognition.onerror = (event) => {
+        if (!finishDictation()) return
         if (event.error !== 'aborted') {
           const errorMessage = event.error === 'not-allowed'
             ? 'Debes permitir el acceso al microfono para usar el dictado.'
@@ -429,16 +444,20 @@ export function AiPlannerPanel({
                     : `No se pudo reconocer la voz (${event.error}).`
           pushError(errorMessage)
         }
-        setIsListening(false)
-        speechRecognitionRef.current = null
       }
       recognition.onend = () => {
-        setIsListening(false)
-        speechRecognitionRef.current = null
+        if (finishDictation() && !receivedText) {
+          pushError('El dictado terminó sin texto. Verifica el micrófono o haz clic en el campo y usa Windows + H.')
+        }
       }
 
       speechRecognitionRef.current = recognition
       recognition.start()
+      speechTimeoutRef.current = window.setTimeout(() => {
+        if (!finishDictation()) return
+        recognition.abort()
+        pushError('El navegador no devolvió texto. Verifica el micrófono o haz clic en el campo y usa Windows + H.')
+      }, 12000)
     } catch (error) {
       const message = error instanceof DOMException && error.name === 'NotAllowedError'
         ? 'Debes permitir el acceso al microfono para usar el dictado.'
