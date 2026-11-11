@@ -339,11 +339,11 @@ export function AiPlannerPanel({
   }
 
   async function toggleVoiceInput() {
-    if (groupPending || isBusy) return
     if (isListening) {
       speechRecognitionRef.current?.stop()
       return
     }
+    if (isBusy || !chat.ready || speechRecognitionRef.current) return
 
     if (!window.isSecureContext) {
       pushError('El microfono requiere HTTPS o localhost. Abre la aplicacion desde una conexion segura.')
@@ -384,10 +384,12 @@ export function AiPlannerPanel({
         }
       }
 
+      if (!panelMountedRef.current) return
+
       const recognition = new SpeechRecognition()
       recognition.lang = DICTATION_LANGUAGE
       recognition.processLocally = true
-      recognition.continuous = false
+      recognition.continuous = true
       recognition.interimResults = true
       dictationBaseTextRef.current = message.trimEnd()
 
@@ -670,11 +672,12 @@ export function AiPlannerPanel({
             />
           </label>
           <button
-            aria-label={isListening ? 'Detener dictado' : 'Dictar peticion'}
+            aria-label={isListening ? 'Detener dictado' : 'Dictar mensaje'}
+            aria-pressed={isListening}
             className={isListening ? 'ai-composer-icon active' : 'ai-composer-icon'}
-            disabled={isBusy || groupPending}
+            disabled={!isListening && (isBusy || !chat.ready)}
             onClick={toggleVoiceInput}
-            title={isListening ? 'Detener dictado' : 'Dictar peticion'}
+            title={isListening ? 'Detener dictado' : 'Dictar mensaje'}
             type="button"
           >
             {isListening ? <MicOff size={18} /> : <Mic size={18} />}
