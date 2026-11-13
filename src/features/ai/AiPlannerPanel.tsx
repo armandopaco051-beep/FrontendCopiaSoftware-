@@ -121,6 +121,10 @@ function readStoredPlan(value: Record<string, unknown> | null): ActionablePlan |
   return value as ActionablePlan
 }
 
+function isExecutablePlan(plan: ActionablePlan | undefined): plan is ActionablePlan {
+  return Boolean(plan && plan.can_execute && plan.actions.length > 0 && plan.questions.length === 0)
+}
+
 function readImageStats(value: Record<string, unknown> | null): ChatMessage['imageStats'] {
   const stats = value?.imageStats
   if (!stats || typeof stats !== 'object' || !('classes' in stats) || !('relations' in stats)
@@ -173,6 +177,7 @@ export function AiPlannerPanel({
   const replyQueueRef = useRef(Promise.resolve())
   const planDecisionRef = useRef<(() => void) | null>(null)
   const [pendingPlanId, setPendingPlanId] = useState<string | null>(null)
+  const [rejectedPlanIds, setRejectedPlanIds] = useState<Set<string>>(() => new Set())
   const [localRequestStartedAt, setLocalRequestStartedAt] = useState<number | null>(null)
   const [localElapsedSeconds, setLocalElapsedSeconds] = useState(0)
   const [localTypicalSeconds, setLocalTypicalSeconds] = useState<number | null>(null)
@@ -182,6 +187,7 @@ export function AiPlannerPanel({
   const [isListening, setIsListening] = useState(false)
   const [cameraContext, setCameraContext] = useState<string | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const composerInputRef = useRef<HTMLTextAreaElement>(null)
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const speechTimeoutRef = useRef<number | undefined>(undefined)
   const dictationBaseTextRef = useRef('')
@@ -306,12 +312,18 @@ export function AiPlannerPanel({
     resume?.()
   }
 
+  function handleRejectPlan(chatMessageId: string) {
+    setRejectedPlanIds((current) => new Set(current).add(chatMessageId))
+    if (chatMessageId === pendingPlanId) finishPlanDecision()
+    composerInputRef.current?.focus()
+  }
+
   async function processQueuedReply(messageId: number, diagramId?: number) {
     setIsLoading(true)
     try {
       const answer = await requestChatAnswer(messageId, diagramId)
       const plan = readStoredPlan(answer.resultado_ia)
-      if (!panelMountedRef.current || !canEdit || !plan?.can_execute || !plan.actions.length) return
+      if (!panelMountedRef.current || !canEdit || !isExecutablePlan(plan)) return
 
       setIsLoading(false)
       await new Promise<void>((resume) => {
@@ -333,7 +345,7 @@ export function AiPlannerPanel({
       pushError('No tienes permiso para modificar este diagrama.')
       return
     }
-    if (!plan.can_execute || plan.actions.length === 0) {
+    if (!isExecutablePlan(plan)) {
       pushError('Este plan tiene preguntas pendientes o no contiene acciones aplicables.')
       return
     }
@@ -604,7 +616,7 @@ export function AiPlannerPanel({
     try {
       const stored = await chat.analyze(image, activeDiagramaId)
       const plan = readStoredPlan(stored.resultado_ia)
-      if (plan?.can_execute && plan.actions.length > 0) {
+      if (isExecutablePlan(plan)) {
         await handleApplyPlan(plan)
       }
     } catch (requestError) {
@@ -665,6 +677,10 @@ export function AiPlannerPanel({
             (first, second) => first.order - second.order,
           )
           const visibleQuestions = chatMessage.plan?.questions ?? chatMessage.questions ?? []
+          const planRejected = rejectedPlanIds.has(chatMessage.id)
+          const planDecisionDisabled = composerBusy || isLoading || isListening || chat.blocked || !canEdit
+            || (pendingPlanId !== null && pendingPlanId !== chatMessage.id)
+            || (pendingPlanId === null && pendingSends > 0)
           return (
             <article className={`ai-chat-message ${chatMessage.role}${chatMessage.role === 'user' && chatMessage.senderCode && chatMessage.senderCode !== (currentUser?.codigo || autorCodigo) ? ' peer' : ''}`} key={chatMessage.id}>
               <div className="ai-chat-bubble">
@@ -724,24 +740,36 @@ export function AiPlannerPanel({
                       </div>
                     ) : null}
 
-                    {sortedActions.length > 0 && chatMessage.plan.can_execute ? (
+                    {planRejected ? (
+                      <small>Plan rechazado</small>
+                    ) : isExecutablePlan(chatMessage.plan) ? (
                       <>
-                        <button
-                          className="primary-action ai-apply-button"
-                          disabled={composerBusy || isLoading || isListening || chat.blocked || !canEdit
-                            || (pendingPlanId !== null && pendingPlanId !== chatMessage.id)
-                            || (pendingPlanId === null && pendingSends > 0)}
-                          onClick={() => handleApplyPlan(chatMessage.plan!, chatMessage.id)}
-                          type="button"
-                        >
-                          {isApplying ? 'Aplicando...' : 'Aplicar plan'}
-                        </button>
+                        <div className="ai-plan-decisions">
+                          <button
+                            className="primary-action ai-apply-button"
+                            disabled={planDecisionDisabled}
+                            onClick={() => handleApplyPlan(chatMessage.plan!, chatMessage.id)}
+                            type="button"
+                          >
+                            {isApplying ? 'Aplicando...' : 'Aplicar plan'}
+                          </button>
+                          {canEdit ? (
+                            <button
+                              className="ai-reject-button"
+                              disabled={planDecisionDisabled}
+                              onClick={() => handleRejectPlan(chatMessage.id)}
+                              type="button"
+                            >
+                              Rechazar plan
+                            </button>
+                          ) : null}
+                        </div>
                         {!canEdit ? <small>Tu rol no permite modificar este diagrama.</small> : null}
                       </>
                     ) : (
                       <small>
                         {visibleQuestions.length > 0
-                          ? 'Responde las preguntas en el chat para completar el plan.'
+                          ? 'Puedes responder las preguntas en otro mensaje para completar el plan.'
                           : sortedActions.length > 0
                             ? 'Esta propuesta todavía no está lista para ejecutarse. Pide a la IA que complete el plan.'
                             : null}
@@ -760,7 +788,7 @@ export function AiPlannerPanel({
               <Loader2 className="ai-spin" size={17} />
               <span>
                 {pendingPlanId !== null
-                  ? 'La cola espera a que se aplique y guarde el plan anterior.'
+                  ? 'Los mensajes en cola esperan a que apliques o rechaces el plan.'
                   : localRequestStartedAt !== null
                   ? `Esperando a la IA local · ${localElapsedSeconds} s transcurridos. ${localTypicalSeconds === null
                     ? 'La consulta puede estar en cola.'
@@ -842,6 +870,7 @@ export function AiPlannerPanel({
           </button>
         </div>
         <textarea
+          ref={composerInputRef}
           disabled={composerBusy || isListening || !chat.ready}
           onChange={(event) => setMessage(event.target.value)}
           onKeyDown={(event) => {

@@ -243,6 +243,22 @@
   padding-top: 9px;
 }
 
+.ai-plan-decisions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-reject-button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 .ai-apply-button {
   min-height: 40px;
   border-radius: 12px;
@@ -366,7 +382,8 @@
 }
 
 .ai-chat-composer button:disabled,
-.ai-apply-button:disabled {
+.ai-apply-button:disabled,
+.ai-reject-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
