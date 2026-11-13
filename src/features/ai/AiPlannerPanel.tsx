@@ -1,5 +1,6 @@
+import { DiagramCameraDialog } from './DiagramCameraDialog'
 import { useEffect, useRef, useState } from 'react'
-import { ImagePlus, Loader2, Mic, MicOff, Send } from 'lucide-react'
+import { Camera, ImagePlus, Loader2, Mic, MicOff, Send } from 'lucide-react'
 import { ApiError } from '../../services/api'
 import { useProjectChat } from './useProjectChat'
 import type { TextProvider } from '../../services/chatService'
@@ -179,6 +180,7 @@ export function AiPlannerPanel({
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false)
   const [isPreparingVoice, setIsPreparingVoice] = useState(false)
   const [isListening, setIsListening] = useState(false)
+  const [cameraContext, setCameraContext] = useState<string | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const speechTimeoutRef = useRef<number | undefined>(undefined)
@@ -818,6 +820,16 @@ export function AiPlannerPanel({
             />
           </label>
           <button
+            aria-label="Tomar foto"
+            className="ai-composer-icon"
+            disabled={isBusy || isListening || !chat.ready || !canEdit || !autorCodigo || !(activeDiagramaId > 0)}
+            onClick={() => setCameraContext(conversationKey)}
+            title="Tomar foto"
+            type="button"
+          >
+            <Camera size={18} />
+          </button>
+          <button
             aria-label={isListening ? 'Detener dictado' : 'Dictar mensaje'}
             aria-pressed={isListening}
             className={isListening ? 'ai-composer-icon active' : 'ai-composer-icon'}
@@ -845,6 +857,15 @@ export function AiPlannerPanel({
           <Send size={18} />
         </button>
       </div>
+      {cameraContext === conversationKey && chat.ready && canEdit && !isBusy ? (
+        <DiagramCameraDialog
+          onClose={() => setCameraContext(null)}
+          onAnalyze={(file) => {
+            setCameraContext(null)
+            void handleImage(file)
+          }}
+        />
+      ) : null}
     </section>
   )
 }
